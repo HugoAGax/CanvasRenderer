@@ -4,6 +4,7 @@ class CanvasRenderer {
     this.viewport = config.viewport;
     this._origin = [0, 0, 0];
     this.spheres = config.spheres;
+    this.lights = config.lights;
     this.background_color = [255, 255, 255];
   }
 
@@ -27,7 +28,7 @@ class CanvasRenderer {
       for (let y = -this._c_height / 2; y < this._c_height / 2; y++) {
         let direction = this.canvasToViewport([x, y]);
         let color = this.traceRay(this._origin, direction, 0, Infinity);
-        this.paintPixel(x, y, color);
+        this.paintPixel(x, y, this.clamp(color));
       }
     }
     this._updateCanvas();
@@ -65,20 +66,25 @@ class CanvasRenderer {
     let closestTravel = Infinity;
     let closestSphere = null;
     this.spheres.forEach((sphere) => {
-      let t1, t2 = canvasRenderer.intersectRaySphere(origin, direction, sphere);
-      if (travelMin <= t1 && t1 <= travelMax && t1 < closestTravel) {
-        closestTravel = t1;
+      let ts = canvasRenderer.intersectRaySphere(origin, direction, sphere);
+      if (travelMin <= ts[0] && ts[0] <= travelMax && ts[0] < closestTravel) {
+        closestTravel = ts[0];
         closestSphere = sphere;
       }
-      if (travelMin <= t2 && t2 <= travelMax && t2 < closestTravel) {
-        closestTravel = t1;
+      if (travelMin <= ts[1] && ts[1] <= travelMax && ts[1] < closestTravel) {
+        closestTravel = ts[1];
         closestSphere = sphere;
       }
     });
     if (closestSphere === null) {
       return this.background_color;
     }
-    return closestSphere.color;
+
+    var point = this.add(origin, this.multiply(closestTravel, direction));
+    var normal = this.subtract(point, closestSphere.center);
+    normal = this.multiply(1.0 / this.magnitude(normal), normal);
+
+    return this.multiply(this.computeLighting(point, normal), closestSphere.color)
   }
 
   intersectRaySphere(origin, direction, sphere) {
@@ -96,7 +102,7 @@ class CanvasRenderer {
     let t1 = (-b + Math.sqrt(discriminant)) / (2 * a);
     let t2 = (-b - Math.sqrt(discriminant)) / (2 * a);
     
-    return t1, t2;
+    return [t1, t2];
   }
 
   dotProduct (v1, v2) {
@@ -106,6 +112,44 @@ class CanvasRenderer {
   subtract (v1, v2) {
     return [v1[0] - v2[0], v1[1] - v2[1], v1[2] - v2[2]];
   }
-}
 
-// export default CanvasRenderer;
+  multiply (k, v) {
+    return [k * v[0], k * v[1], k * v[2]];
+  }
+
+  add (v1, v2) {
+    return [v1[0] + v2[0], v1[1] + v2[1], v1[2] + v2[2]];
+  }
+  
+  magnitude (v) {
+    return Math.sqrt(this.dotProduct(v, v));
+  }
+
+  clamp (vec) {
+    return [Math.min(255, Math.max(0, vec[0])),
+        Math.min(255, Math.max(0, vec[1])),
+        Math.min(255, Math.max(0, vec[2]))];
+  }
+
+  computeLighting(point, normal) {
+    let i = 0;
+    const canvasRenderer = this;
+    this.lights.forEach((light) => {
+      let lightV = [];
+      if (light.type === 'ambient') {
+        i += light.intensity; 
+      } else {
+        if (light.type === 'point') {
+          lightV = canvasRenderer.subtract(light.pos, point);
+        } else {
+          lightV = light.pos;
+        }
+        let dotNL = canvasRenderer.dotProduct(normal, lightV);
+        if (dotNL > 0) {
+          i += light.intensity * dotNL / canvasRenderer.magnitude(lightV);
+        }
+      }
+    });
+    return i;
+  }
+}
