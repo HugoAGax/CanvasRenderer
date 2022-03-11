@@ -84,7 +84,15 @@ class CanvasRenderer {
     var normal = this.subtract(point, closestSphere.center);
     normal = this.multiply(1.0 / this.magnitude(normal), normal);
 
-    return this.multiply(this.computeLighting(point, normal), closestSphere.color)
+    return this.multiply(
+      this.computeLighting(
+        point,
+        normal,
+        this.multiply(-1, direction),
+        closestSphere.specular
+      ),
+      closestSphere.color
+    );
   }
 
   intersectRaySphere(origin, direction, sphere) {
@@ -101,52 +109,73 @@ class CanvasRenderer {
 
     let t1 = (-b + Math.sqrt(discriminant)) / (2 * a);
     let t2 = (-b - Math.sqrt(discriminant)) / (2 * a);
-    
+
     return [t1, t2];
   }
 
-  dotProduct (v1, v2) {
-    return v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2];
+  dotProduct(v1, v2) {
+    return v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
   }
-  
-  subtract (v1, v2) {
+
+  subtract(v1, v2) {
     return [v1[0] - v2[0], v1[1] - v2[1], v1[2] - v2[2]];
   }
 
-  multiply (k, v) {
+  multiply(k, v) {
     return [k * v[0], k * v[1], k * v[2]];
   }
 
-  add (v1, v2) {
+  add(v1, v2) {
     return [v1[0] + v2[0], v1[1] + v2[1], v1[2] + v2[2]];
   }
-  
-  magnitude (v) {
+
+  magnitude(v) {
     return Math.sqrt(this.dotProduct(v, v));
   }
 
-  clamp (vec) {
-    return [Math.min(255, Math.max(0, vec[0])),
-        Math.min(255, Math.max(0, vec[1])),
-        Math.min(255, Math.max(0, vec[2]))];
+  clamp(vec) {
+    return [
+      Math.min(255, Math.max(0, vec[0])),
+      Math.min(255, Math.max(0, vec[1])),
+      Math.min(255, Math.max(0, vec[2])),
+    ];
   }
 
-  computeLighting(point, normal) {
+  computeLighting(point, normal, vec, specular) {
     let i = 0;
     const canvasRenderer = this;
     this.lights.forEach((light) => {
       let lightV = [];
-      if (light.type === 'ambient') {
-        i += light.intensity; 
+      if (light.type === "ambient") {
+        i += light.intensity;
       } else {
-        if (light.type === 'point') {
+        if (light.type === "point") {
           lightV = canvasRenderer.subtract(light.pos, point);
         } else {
           lightV = light.pos;
         }
+
+        // DIFFUSE
         let dotNL = canvasRenderer.dotProduct(normal, lightV);
         if (dotNL > 0) {
-          i += light.intensity * dotNL / canvasRenderer.magnitude(lightV);
+          i += (light.intensity * dotNL) / canvasRenderer.magnitude(lightV);
+        }
+
+        // SPECULAR
+        if (specular !== -1) {
+          let reflection = this.subtract(
+            this.multiply(2 * dotNL, normal),
+            lightV
+          );
+          let dotRV = this.dotProduct(reflection, vec);
+          if (dotRV > 0) {
+            i +=
+              light.intensity *
+              Math.pow(
+                dotRV / (this.magnitude(reflection) * this.magnitude(vec)),
+                specular
+              );
+          }
         }
       }
     });
